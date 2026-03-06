@@ -1,2 +1,4 @@
 azure-eventhub
+azure-eventhub-checkpointstoreblob
+azure-storage-blob
 requests
