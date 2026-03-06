@@ -5,6 +5,19 @@ import requests
 import os
 import time
 
+# Validate environment variables
+required_env = [
+    "EVENT_HUB_CONNECTION",
+    "EVENT_HUB_NAME",
+    "CONSUMER_GROUP",
+    "DATADOG_API_KEY",
+    "BLOB_CONNECTION"
+]
+
+for var in required_env:
+    if not os.getenv(var):
+        raise ValueError(f"Missing environment variable: {var}")
+
 # Event Hub configuration
 connection_str = os.getenv("EVENT_HUB_CONNECTION")
 eventhub_name = os.getenv("EVENT_HUB_NAME")
@@ -25,7 +38,6 @@ checkpoint_store = BlobCheckpointStore(
     container_name=blob_container
 )
 
-# Retry function for Datadog
 def send_to_datadog(log):
 
     retries = 3
@@ -42,7 +54,7 @@ def send_to_datadog(log):
             if response.status_code == 200:
                 return True
 
-            print("Datadog error:", response.status_code)
+            print(f"Datadog error {response.status_code}, retry {attempt+1}")
 
         except Exception as e:
             print("Datadog request failed:", e)
@@ -60,13 +72,16 @@ def on_event(partition_context, event):
 
         print("Log sent")
 
-        # checkpoint only after successful send
         partition_context.update_checkpoint(event)
 
     else:
 
         print("Failed to send log after retries")
 
+
+print("Starting EventHub consumer...")
+print("EventHub:", eventhub_name)
+print("Consumer group:", consumer_group)
 
 client = EventHubConsumerClient.from_connection_string(
     conn_str=connection_str,
