@@ -7,7 +7,7 @@ eventhub_name = os.getenv("EVENT_HUB_NAME")
 consumer_group = os.getenv("CONSUMER_GROUP")
 
 datadog_api_key = os.getenv("DATADOG_API_KEY")
-datadog_url = f"https://http-intake.logs.datadoghq.com/v1/input/{datadog_api_key}"
+datadog_url = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{datadog_api_key}"
 
 def on_event(partition_context, event):
 
