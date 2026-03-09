@@ -32,10 +32,13 @@ blob_connection = os.getenv("BLOB_CONNECTION")
 blob_container = "eventhub-checkpoints"
 
 blob_service_client = BlobServiceClient.from_connection_string(blob_connection)
+
 container_client = blob_service_client.get_container_client(blob_container)
 
-checkpoint_store = BlobCheckpointStore(container_client)
-
+checkpoint_store = BlobCheckpointStore(
+    container_client,
+    blob_container
+)
 def send_to_datadog(log):
 
     retries = 3
