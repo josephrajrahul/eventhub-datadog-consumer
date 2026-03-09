@@ -23,8 +23,8 @@ BLOB_CONTAINER = "eventhub-checkpoints"
 blob_service_client = BlobServiceClient.from_connection_string(BLOB_CONNECTION)
 
 checkpoint_store = BlobCheckpointStore(
-    blob_service_client,
-    BLOB_CONTAINER
+    blob_service_client=blob_service_client,
+    container_name=BLOB_CONTAINER
 )
 
 # Retry send to Datadog
