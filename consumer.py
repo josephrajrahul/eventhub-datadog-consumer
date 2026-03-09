@@ -1,5 +1,6 @@
 from azure.eventhub import EventHubConsumerClient
 from azure.eventhub.extensions.checkpointstoreblob import BlobCheckpointStore
+from azure.storage.blob import BlobServiceClient
 import requests
 import os
 import time
@@ -30,10 +31,10 @@ datadog_url = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{datadog_api
 blob_connection = os.getenv("BLOB_CONNECTION")
 blob_container = "eventhub-checkpoints"
 
-checkpoint_store = BlobCheckpointStore(
-    blob_connection,
-    blob_container
-)
+blob_service_client = BlobServiceClient.from_connection_string(blob_connection)
+container_client = blob_service_client.get_container_client(blob_container)
+
+checkpoint_store = BlobCheckpointStore(container_client)
 
 def send_to_datadog(log):
 
