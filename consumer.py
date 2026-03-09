@@ -4,74 +4,113 @@ from azure.storage.blob import BlobServiceClient
 import requests
 import os
 import time
+import json
 
-connection_str = os.getenv("EVENT_HUB_CONNECTION")
-eventhub_name = os.getenv("EVENT_HUB_NAME")
-consumer_group = os.getenv("CONSUMER_GROUP")
+# -----------------------------
+# Environment Variables
+# -----------------------------
+EVENT_HUB_CONNECTION = os.getenv("EVENT_HUB_CONNECTION")
+EVENT_HUB_NAME = os.getenv("EVENT_HUB_NAME")
+CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
 
-datadog_api_key = os.getenv("DATADOG_API_KEY")
-datadog_url = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{datadog_api_key}"
+DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
 
-blob_connection = os.getenv("BLOB_CONNECTION")
-blob_container = "eventhub-checkpoints"
+BLOB_CONNECTION = os.getenv("BLOB_CONNECTION")
+BLOB_CONTAINER = "eventhub-checkpoints"
 
-# Correct blob client
-blob_service_client = BlobServiceClient.from_connection_string(blob_connection)
+DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{DATADOG_API_KEY}"
 
-checkpoint_store = BlobCheckpointStore(
-    blob_service_client,
-    blob_container
-)
+# -----------------------------
+# Blob Checkpoint Store
+# -----------------------------
+blob_service_client = BlobServiceClient.from_connection_string(BLOB_CONNECTION)
+container_client = blob_service_client.get_container_client(BLOB_CONTAINER)
 
-def send_to_datadog(log):
+checkpoint_store = BlobCheckpointStore(container_client)
 
-    retries = 3
+# -----------------------------
+# Datadog Sender (Batch)
+# -----------------------------
+def send_batch_to_datadog(logs):
+
+    retries = 5
+    backoff = 2
 
     for attempt in range(retries):
 
         try:
+
             response = requests.post(
-                datadog_url,
+                DATADOG_URL,
                 headers={"Content-Type": "application/json"},
-                data=log,
-                timeout=5
+                data="\n".join(logs),
+                timeout=10
             )
 
             if response.status_code == 200:
                 return True
 
-            print(f"Datadog error {response.status_code}")
+            print(f"Datadog returned {response.status_code}")
 
         except Exception as e:
-            print("Datadog request failed:", e)
 
-        time.sleep(2)
+            print(f"Datadog request failed: {e}")
+
+        time.sleep(backoff)
+        backoff *= 2
 
     return False
 
 
-def on_event(partition_context, event):
+# -----------------------------
+# EventHub Batch Processor
+# -----------------------------
+def on_event_batch(partition_context, events):
 
-    log = event.body_as_str()
+    logs = []
 
-    if send_to_datadog(log):
+    for event in events:
+        try:
+            logs.append(event.body_as_str())
+        except Exception as e:
+            print("Error parsing event:", e)
 
-        print("Log sent")
-        partition_context.update_checkpoint(event)
+    if not logs:
+        return
+
+    success = send_batch_to_datadog(logs)
+
+    if success:
+
+        print(f"Sent batch of {len(logs)} logs")
+
+        partition_context.update_checkpoint()
 
     else:
 
-        print("Failed to send log after retries")
+        print("Batch failed after retries")
 
 
-print("Starting EventHub consumer...")
+# -----------------------------
+# Consumer Client
+# -----------------------------
+print("Starting EventHub consumer")
 
 client = EventHubConsumerClient.from_connection_string(
-    conn_str=connection_str,
-    consumer_group=consumer_group,
-    eventhub_name=eventhub_name,
+    conn_str=EVENT_HUB_CONNECTION,
+    consumer_group=CONSUMER_GROUP,
+    eventhub_name=EVENT_HUB_NAME,
     checkpoint_store=checkpoint_store
 )
 
+# -----------------------------
+# Receive events
+# -----------------------------
 with client:
-    client.receive(on_event=on_event, starting_position="-1")
+
+    client.receive_batch(
+        on_event_batch=on_event_batch,
+        max_batch_size=100,
+        max_wait_time=5,
+        starting_position="-1"
+    )
