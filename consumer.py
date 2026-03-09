@@ -5,46 +5,36 @@ import requests
 import os
 import time
 
-# Validate environment variables
-required_env = [
-    "EVENT_HUB_CONNECTION",
-    "EVENT_HUB_NAME",
-    "CONSUMER_GROUP",
-    "DATADOG_API_KEY",
-    "BLOB_CONNECTION"
-]
-
-for var in required_env:
-    if not os.getenv(var):
-        raise ValueError(f"Missing environment variable: {var}")
-
 # Event Hub configuration
 connection_str = os.getenv("EVENT_HUB_CONNECTION")
 eventhub_name = os.getenv("EVENT_HUB_NAME")
 consumer_group = os.getenv("CONSUMER_GROUP")
 
-# Datadog configuration
+# Datadog
 datadog_api_key = os.getenv("DATADOG_API_KEY")
 datadog_url = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{datadog_api_key}"
 
-# Blob checkpoint configuration
+# Blob Storage
 blob_connection = os.getenv("BLOB_CONNECTION")
 blob_container = "eventhub-checkpoints"
 
+# 🔹 Create BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(blob_connection)
 
-container_client = blob_service_client.get_container_client(blob_container)
-
+# 🔹 Correct checkpoint store initialization
 checkpoint_store = BlobCheckpointStore(
-    container_client,
+    blob_service_client,
     blob_container
 )
+
 def send_to_datadog(log):
 
     retries = 3
 
     for attempt in range(retries):
+
         try:
+
             response = requests.post(
                 datadog_url,
                 headers={"Content-Type": "application/json"},
@@ -82,7 +72,6 @@ def on_event(partition_context, event):
 
 print("Starting EventHub consumer...")
 print("EventHub:", eventhub_name)
-print("Consumer group:", consumer_group)
 
 client = EventHubConsumerClient.from_connection_string(
     conn_str=connection_str,
