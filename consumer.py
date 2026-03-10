@@ -8,9 +8,9 @@ import time
 import threading
 import queue
 
-# =========================
+# ========================
 # CONFIG
-# =========================
+# ========================
 
 EVENT_HUB_CONNECTION = os.getenv("EVENT_HUB_CONNECTION")
 EVENT_HUB_NAME = os.getenv("EVENT_HUB_NAME")
@@ -32,24 +32,21 @@ checkpoint_store = BlobCheckpointStore(
     STORAGE_ACCOUNT_KEY
 )
 
-# =========================
+# ========================
 # PERFORMANCE SETTINGS
-# =========================
+# ========================
 
 BATCH_SIZE = 200
-FLUSH_INTERVAL = 3
+FLUSH_INTERVAL = 2
 WORKER_THREADS = 4
 SEND_TIMEOUT = 10
 
-# =========================
-# QUEUE
-# =========================
+# unlimited queue (no dropping)
+log_queue = queue.Queue()
 
-log_queue = queue.Queue(maxsize=10000)
-
-# =========================
-# DATADOG SEND FUNCTION
-# =========================
+# ========================
+# SEND TO DATADOG
+# ========================
 
 def send_to_datadog(batch):
 
@@ -70,7 +67,9 @@ def send_to_datadog(batch):
             )
 
             if response.status_code == 200:
+
                 print(f"Sent {len(batch)} logs to Datadog")
+
                 return True
 
             print("Datadog error:", response.status_code)
@@ -85,20 +84,25 @@ def send_to_datadog(batch):
     return False
 
 
-# =========================
+# ========================
 # WORKER THREAD
-# =========================
+# ========================
 
 def worker():
 
     batch = []
+    contexts = []
     last_flush = time.time()
 
     while True:
 
         try:
-            log = log_queue.get(timeout=1)
+
+            partition_context, log = log_queue.get(timeout=1)
+
             batch.append(log)
+            contexts.append(partition_context)
+
             log_queue.task_done()
 
         except queue.Empty:
@@ -106,44 +110,42 @@ def worker():
 
         now = time.time()
 
-        # Flush if batch full OR timeout reached
         if len(batch) >= BATCH_SIZE or (batch and now - last_flush >= FLUSH_INTERVAL):
 
-            send_to_datadog(batch)
+            success = send_to_datadog(batch)
+
+            if success:
+                contexts[-1].update_checkpoint()
 
             batch = []
+            contexts = []
             last_flush = now
 
 
-# Start workers
+# start workers
 for _ in range(WORKER_THREADS):
     threading.Thread(target=worker, daemon=True).start()
 
 
-# =========================
+# ========================
 # EVENT HUB HANDLER
-# =========================
+# ========================
 
 def on_event_batch(partition_context, events):
 
-    print(f"Received {len(events)} events from EventHub")
+    print(f"Received {len(events)} events")
 
     for event in events:
 
         log = event.body_as_str()
 
-        try:
-            log_queue.put_nowait(log)
-
-        except queue.Full:
-            print("Queue full, dropping log")
-
-    partition_context.update_checkpoint()
+        # block instead of dropping
+        log_queue.put((partition_context, log))
 
 
-# =========================
+# ========================
 # START CONSUMER
-# =========================
+# ========================
 
 print("Starting EventHub consumer")
 
