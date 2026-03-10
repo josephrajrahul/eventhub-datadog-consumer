@@ -1,4 +1,5 @@
 azure-eventhub
 azure-eventhub-checkpointstoreblob
 azure-storage-blob
+azure-identity
 requests
