@@ -36,12 +36,13 @@ checkpoint_store = BlobCheckpointStore(
 # PERFORMANCE SETTINGS
 # =========================
 
-BATCH_SIZE = 500
+BATCH_SIZE = 200
+FLUSH_INTERVAL = 3
 WORKER_THREADS = 4
 SEND_TIMEOUT = 10
 
 # =========================
-# QUEUE FOR PARALLEL SEND
+# QUEUE
 # =========================
 
 log_queue = queue.Queue(maxsize=10000)
@@ -69,7 +70,7 @@ def send_to_datadog(batch):
             )
 
             if response.status_code == 200:
-                print(f"Sent {len(batch)} logs")
+                print(f"Sent {len(batch)} logs to Datadog")
                 return True
 
             print("Datadog error:", response.status_code)
@@ -85,29 +86,33 @@ def send_to_datadog(batch):
 
 
 # =========================
-# WORKER THREADS
+# WORKER THREAD
 # =========================
 
 def worker():
 
     batch = []
+    last_flush = time.time()
 
     while True:
 
-        log = log_queue.get()
+        try:
+            log = log_queue.get(timeout=1)
+            batch.append(log)
+            log_queue.task_done()
 
-        if log is None:
-            break
+        except queue.Empty:
+            pass
 
-        batch.append(log)
+        now = time.time()
 
-        if len(batch) >= BATCH_SIZE:
+        # Flush if batch full OR timeout reached
+        if len(batch) >= BATCH_SIZE or (batch and now - last_flush >= FLUSH_INTERVAL):
 
             send_to_datadog(batch)
 
             batch = []
-
-        log_queue.task_done()
+            last_flush = now
 
 
 # Start workers
@@ -121,12 +126,15 @@ for _ in range(WORKER_THREADS):
 
 def on_event_batch(partition_context, events):
 
+    print(f"Received {len(events)} events from EventHub")
+
     for event in events:
 
         log = event.body_as_str()
 
         try:
             log_queue.put_nowait(log)
+
         except queue.Full:
             print("Queue full, dropping log")
 
