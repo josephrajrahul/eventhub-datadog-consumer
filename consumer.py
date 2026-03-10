@@ -1,4 +1,5 @@
 from azure.eventhub import EventHubConsumerClient
+from azure.identity import DefaultAzureCredential
 from azure.eventhub.extensions.checkpointstoreblob import BlobCheckpointStore
 from azure.storage.blob import BlobServiceClient
 import requests
@@ -19,12 +20,15 @@ DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{DATADOG_API
 BLOB_CONNECTION = os.getenv("BLOB_CONNECTION")
 BLOB_CONTAINER = "eventhub-checkpoints"
 
-# Correct BlobCheckpointStore initialization
 blob_service_client = BlobServiceClient.from_connection_string(BLOB_CONNECTION)
 
+account_url = blob_service_client.url
+credential = blob_service_client.credential
+
 checkpoint_store = BlobCheckpointStore(
-    blob_service_client=blob_service_client,
-    container_name=BLOB_CONTAINER
+    blob_account_url=account_url,
+    container_name=BLOB_CONTAINER,
+    credential=credential
 )
 
 # Retry send to Datadog
