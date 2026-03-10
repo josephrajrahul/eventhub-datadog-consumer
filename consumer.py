@@ -127,6 +127,7 @@ def on_event_batch(partition_context, events):
 
     global event_counter
 
+    if events:
     print(f"Received {len(events)} events")
 
     for event in events:
@@ -161,5 +162,5 @@ with client:
         on_event_batch=on_event_batch,
         max_batch_size=500,
         max_wait_time=5,
-        starting_position="-1"
+        starting_position="@latest"
     )
