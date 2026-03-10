@@ -128,7 +128,7 @@ def on_event_batch(partition_context, events):
     global event_counter
 
     if events:
-    print(f"Received {len(events)} events")
+        print(f"Received {len(events)} events")
 
     for event in events:
 
