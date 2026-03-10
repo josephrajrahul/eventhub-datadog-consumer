@@ -17,18 +17,17 @@ DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
 DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{DATADOG_API_KEY}"
 
 # Blob storage
-BLOB_CONNECTION = os.getenv("BLOB_CONNECTION")
+STORAGE_ACCOUNT_NAME = os.getenv("STORAGE_ACCOUNT_NAME")
+STORAGE_ACCOUNT_KEY = os.getenv("STORAGE_ACCOUNT_KEY")
+
 BLOB_CONTAINER = "eventhub-checkpoints"
 
-blob_service_client = BlobServiceClient.from_connection_string(BLOB_CONNECTION)
-
-account_url = blob_service_client.url
-credential = blob_service_client.credential
+blob_account_url = f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
 
 checkpoint_store = BlobCheckpointStore(
-    blob_account_url=account_url,
-    container_name=BLOB_CONTAINER,
-    credential=credential
+    blob_account_url,
+    BLOB_CONTAINER,
+    STORAGE_ACCOUNT_KEY
 )
 
 # Retry send to Datadog
