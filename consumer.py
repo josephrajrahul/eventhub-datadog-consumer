@@ -41,11 +41,10 @@ FLUSH_INTERVAL = 2
 WORKER_THREADS = 4
 SEND_TIMEOUT = 10
 
-# unlimited queue (no dropping)
 log_queue = queue.Queue()
 
 # ========================
-# SEND TO DATADOG
+# DATADOG SEND FUNCTION
 # ========================
 
 def send_to_datadog(batch):
@@ -91,18 +90,13 @@ def send_to_datadog(batch):
 def worker():
 
     batch = []
-    contexts = []
     last_flush = time.time()
 
     while True:
 
         try:
-
-            partition_context, log = log_queue.get(timeout=1)
-
+            log = log_queue.get(timeout=1)
             batch.append(log)
-            contexts.append(partition_context)
-
             log_queue.task_done()
 
         except queue.Empty:
@@ -112,13 +106,9 @@ def worker():
 
         if len(batch) >= BATCH_SIZE or (batch and now - last_flush >= FLUSH_INTERVAL):
 
-            success = send_to_datadog(batch)
-
-            if success:
-                contexts[-1].update_checkpoint()
+            send_to_datadog(batch)
 
             batch = []
-            contexts = []
             last_flush = now
 
 
@@ -131,7 +121,11 @@ for _ in range(WORKER_THREADS):
 # EVENT HUB HANDLER
 # ========================
 
+event_counter = 0
+
 def on_event_batch(partition_context, events):
+
+    global event_counter
 
     print(f"Received {len(events)} events")
 
@@ -139,8 +133,13 @@ def on_event_batch(partition_context, events):
 
         log = event.body_as_str()
 
-        # block instead of dropping
-        log_queue.put((partition_context, log))
+        log_queue.put(log)
+
+        event_counter += 1
+
+        # checkpoint every 100 events
+        if event_counter % 100 == 0:
+            partition_context.update_checkpoint()
 
 
 # ========================
