@@ -8,16 +8,13 @@ import time
 import threading
 import queue
 
-# ========================
-# CONFIG
-# ========================
-
 EVENT_HUB_CONNECTION = os.getenv("EVENT_HUB_CONNECTION")
 EVENT_HUB_NAME = os.getenv("EVENT_HUB_NAME")
 CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
 
 DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
-DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{DATADOG_API_KEY}"
+DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/api/v2/logs"
+
 DATADOG_SOURCE = "azure.apimanagement"
 DATADOG_SERVICE = "tst.apim.service"
 
@@ -34,125 +31,49 @@ checkpoint_store = BlobCheckpointStore(
     STORAGE_ACCOUNT_KEY
 )
 
-# ========================
-# PERFORMANCE SETTINGS
-# ========================
+def send_to_datadog(events):
 
-BATCH_SIZE = 200
-FLUSH_INTERVAL = 2
-WORKER_THREADS = 4
-SEND_TIMEOUT = 10
+    logs = []
 
-log_queue = queue.Queue()
+    for event in events:
 
-# ========================
-# DATADOG SEND FUNCTION
-# ========================
+        body = event.body_as_str()
 
-def send_to_datadog(batch):
-
-    retries = 5
-    backoff = 2
-
-    formatted_logs = []
-
-    for log in batch:
-        formatted_logs.append({
-            "message": log,
+        logs.append({
+            "message": body,
             "ddsource": DATADOG_SOURCE,
             "service": DATADOG_SERVICE
         })
 
-    payload = formatted_logs
+    try:
 
-    for attempt in range(retries):
+        response = requests.post(
+            DATADOG_URL,
+            headers={
+                "Content-Type": "application/json",
+                "DD-API-KEY": DATADOG_API_KEY
+            },
+            json=logs,
+            timeout=10
+        )
 
-        try:
+        print("Sent", len(logs), "logs to Datadog")
 
-            response = requests.post(
-                DATADOG_URL,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=SEND_TIMEOUT
-            )
+    except Exception as e:
+        print("Datadog error:", e)
 
-            if response.status_code == 200:
-                print(f"Sent {len(batch)} logs to Datadog")
-                return True
-
-            print("Datadog error:", response.status_code)
-
-        except Exception as e:
-            print("Datadog exception:", e)
-
-        time.sleep(backoff)
-        backoff *= 2
-
-    return False
-
-# ========================
-# WORKER THREAD
-# ========================
-
-def worker():
-
-    batch = []
-    last_flush = time.time()
-
-    while True:
-
-        try:
-            log = log_queue.get(timeout=1)
-            batch.append(log)
-            log_queue.task_done()
-
-        except queue.Empty:
-            pass
-
-        now = time.time()
-
-        if len(batch) >= BATCH_SIZE or (batch and now - last_flush >= FLUSH_INTERVAL):
-
-            send_to_datadog(batch)
-
-            batch = []
-            last_flush = now
-
-
-# start workers
-for _ in range(WORKER_THREADS):
-    threading.Thread(target=worker, daemon=True).start()
-
-
-# ========================
-# EVENT HUB HANDLER
-# ========================
-
-event_counter = 0
 
 def on_event_batch(partition_context, events):
 
-    global event_counter
+    if not events:
+        return
 
-    if events:
-        print(f"Received {len(events)} events")
+    print(f"Received {len(events)} events")
 
-    for event in events:
+    send_to_datadog(events)
 
-        log = event.body_as_str()
+    partition_context.update_checkpoint()
 
-        log_queue.put(log)
-
-        event_counter += 1
-
-        # checkpoint every 100 events
-        if event_counter % 100 == 0:
-            partition_context.update_checkpoint()
-
-
-# ========================
-# START CONSUMER
-# ========================
 
 print("Starting EventHub consumer")
 
