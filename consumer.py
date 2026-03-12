@@ -54,7 +54,16 @@ def send_to_datadog(batch):
     retries = 5
     backoff = 2
 
-    payload = "\n".join(batch)
+    formatted_logs = []
+
+    for log in batch:
+        formatted_logs.append({
+            "message": log,
+            "ddsource": DATADOG_SOURCE,
+            "service": DATADOG_SERVICE
+        })
+
+payload = formatted_logs
 
     for attempt in range(retries):
 
@@ -63,7 +72,7 @@ def send_to_datadog(batch):
             response = requests.post(
                 DATADOG_URL,
                 headers={"Content-Type": "application/json"},
-                data=payload,
+                json=payload,
                 timeout=SEND_TIMEOUT
             )
 
