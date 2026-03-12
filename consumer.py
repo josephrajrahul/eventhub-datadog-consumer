@@ -63,7 +63,7 @@ def send_to_datadog(batch):
             "service": DATADOG_SERVICE
         })
 
-payload = formatted_logs
+    payload = formatted_logs
 
     for attempt in range(retries):
 
@@ -77,22 +77,18 @@ payload = formatted_logs
             )
 
             if response.status_code == 200:
-
                 print(f"Sent {len(batch)} logs to Datadog")
-
                 return True
 
             print("Datadog error:", response.status_code)
 
         except Exception as e:
-
             print("Datadog exception:", e)
 
         time.sleep(backoff)
         backoff *= 2
 
     return False
-
 
 # ========================
 # WORKER THREAD
