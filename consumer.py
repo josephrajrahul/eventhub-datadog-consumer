@@ -18,8 +18,8 @@ CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
 
 DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
 DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/v1/input/{DATADOG_API_KEY}"
-DATADOG_SOURCE = azure.apimanagement
-DATADOG_SERVICE = tst.apim.service
+DATADOG_SOURCE = "azure.apimanagement"
+DATADOG_SERVICE = "tst.apim.service"
 
 STORAGE_ACCOUNT_NAME = os.getenv("STORAGE_ACCOUNT_NAME")
 STORAGE_ACCOUNT_KEY = os.getenv("STORAGE_ACCOUNT_KEY")
