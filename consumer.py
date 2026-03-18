@@ -13,7 +13,7 @@ EVENT_HUB_NAME = os.getenv("EVENT_HUB_NAME")
 CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
 
 DATADOG_API_KEY = os.getenv("DATADOG_API_KEY")
-DATADOG_URL = f"https://http-intake.logs.us3.datadoghq.com/api/v2/logs"
+DATADOG_URL = f"https://http-intake.logs.datadoghq.com/api/v2/logs"
 
 DATADOG_SOURCE = "azure.apimanagement"
 DATADOG_SERVICE = "tst.apim.service"
