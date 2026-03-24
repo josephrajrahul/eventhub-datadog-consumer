@@ -5,6 +5,7 @@ from azure.storage.blob import BlobServiceClient
 import requests
 import os
 import time
+import json
 import threading
 import queue
 import hashlib
@@ -55,24 +56,27 @@ def send_to_datadog(events, partition_context):
         try:
             body = event.body_as_str()
 
-            log_entry = {
-                "message": body,
+            # 🔥 Parse APIM log (IMPORTANT)
+            log_json = json.loads(body)
+
+            # 🔥 Add Datadog + duplicate detection fields
+            log_json.update({
                 "ddsource": DATADOG_SOURCE,
                 "service": DATADOG_SERVICE,
 
-                # 🔥 Duplicate detection fields
+                # ✅ Duplicate detection
                 "event_id": event.sequence_number,
                 "partition_id": partition_context.partition_id,
                 "log_hash": generate_hash(body),
 
-                # Timestamp (ms)
+                # ✅ Timestamp
                 "timestamp": int(time.time() * 1000)
-            }
+            })
 
-            logs.append(log_entry)
+            logs.append(log_json)
 
         except Exception as e:
-            print("Error processing event:", e)
+            print("❌ Error processing event:", e)
 
     if not logs:
         return
@@ -88,14 +92,13 @@ def send_to_datadog(events, partition_context):
             timeout=10
         )
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             print(f"✅ Sent {len(logs)} logs to Datadog")
         else:
             print(f"❌ Datadog API error: {response.status_code} - {response.text}")
 
     except Exception as e:
         print("❌ Datadog request failed:", e)
-
 
 # ================================
 # EVENT HUB CALLBACK
