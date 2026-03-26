@@ -10,6 +10,8 @@ import threading
 import queue
 import hashlib
 
+log_queue = queue.Queue(maxsize=20000)
+
 # ================================
 # ENV VARIABLES
 # ================================
@@ -100,6 +102,39 @@ def send_to_datadog(events, partition_context):
     except Exception as e:
         print("❌ Datadog request failed:", e)
 
+def worker():
+    while True:
+        logs = log_queue.get()
+        if logs is None:
+            break
+
+        try:
+            for i in range(3):  # retry logic
+                try:
+                    response = requests.post(
+                        DATADOG_URL,
+                        headers={
+                            "Content-Type": "application/json",
+                            "DD-API-KEY": DATADOG_API_KEY
+                        },
+                        json=logs,
+                        timeout=10
+                    )
+
+                    if 200 <= response.status_code < 300:
+                        print(f"✅ Sent {len(logs)} logs to Datadog")
+                        break
+                    else:
+                        print("❌ Datadog error:", response.text)
+
+                except Exception as e:
+                    print("Retrying...", e)
+                    time.sleep(2 ** i)
+
+        finally:
+            log_queue.task_done()
+
+
 # ================================
 # EVENT HUB CALLBACK
 # ================================
@@ -110,10 +145,33 @@ def on_event_batch(partition_context, events):
 
     print(f"📦 Received {len(events)} events from partition {partition_context.partition_id}")
 
-    # Send logs
-    send_to_datadog(events, partition_context)
+    logs = []
 
-    # ✅ Update checkpoint AFTER successful send
+    for event in events:
+        try:
+            body = event.body_as_str()
+
+            log_json = json.loads(body)
+
+            log_json.update({
+                "ddsource": DATADOG_SOURCE,
+                "service": DATADOG_SERVICE,
+                "event_id": event.sequence_number,
+                "partition_id": partition_context.partition_id,
+                "log_hash": generate_hash(body),
+                "timestamp": int(time.time() * 1000)
+            })
+
+            logs.append(log_json)
+
+        except Exception as e:
+            print("❌ Error processing event:", e)
+
+    # ✅ Push logs to queue (NON-BLOCKING)
+    if logs:
+        log_queue.put(logs)
+
+    # ✅ Checkpoint immediately
     try:
         partition_context.update_checkpoint()
         print(f"✅ Checkpoint updated for partition {partition_context.partition_id}")
@@ -124,6 +182,10 @@ def on_event_batch(partition_context, events):
 # ================================
 # MAIN CONSUMER
 # ================================
+# Start worker threads
+for _ in range(10):   # increase later if needed
+    threading.Thread(target=worker, daemon=True).start()
+    
 print("🚀 Starting EventHub consumer...")
 
 client = EventHubConsumerClient.from_connection_string(
@@ -136,7 +198,7 @@ client = EventHubConsumerClient.from_connection_string(
 with client:
     client.receive_batch(
         on_event_batch=on_event_batch,
-        max_batch_size=500,
-        max_wait_time=5,
+        max_batch_size=1000,
+        max_wait_time=2,
         starting_position="@latest"
     )
